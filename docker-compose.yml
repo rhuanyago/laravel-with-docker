@@ -1,0 +1,82 @@
+version: "3.9"
+services:
+
+  #DATABASE
+  rhdev-database:
+    image: rhuanyago/rhdev-database:dev
+    container_name: rhdev-database
+    hostname: database
+    restart: unless-stopped
+    networks:
+      - rhdev-network
+    command: --sql_mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+    ports:
+      - 0.0.0.0:3310:3306
+    volumes:
+      - rhdev-database:/var/lib/mysql
+      - ./Database/my.cnf:/etc/mysql/my.cnf
+    stdin_open: false
+    tty: false
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100k"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    deploy:
+      mode: global
+      replicas: 1
+
+  #PHP
+  rhdev-web:
+    image: rhuanyago/rhdev-web:dev
+    container_name: rhdev-web
+    hostname: web
+    depends_on:
+      rhdev-database:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rhdev-network
+    working_dir: /var/www/
+    volumes:
+      - ./Web/Application:/var/www
+      - ./Web/php.ini:/usr/local/etc/php/conf.d/php.ini
+    stdin_open: false
+    tty: true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100k"
+    healthcheck:
+      test: ["CMD", "netstat", "-a", "-p", "TCP", "-nl", "|", "grep", "0.0.0.0:80"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  #Nginx Service
+  rhdev-reverse-proxy:
+    image: nginx:alpine
+    container_name: rhdev-reverse-proxy
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "8000:80"
+    volumes:
+      - ./Web/Application:/var/www
+      - ./Nginx/conf:/etc/nginx/conf.d
+    networks:
+      - rhdev-network
+
+networks:
+  rhdev-network:
+    name: rhdev-network
+    driver: bridge
+
+volumes:
+  rhdev-database:
